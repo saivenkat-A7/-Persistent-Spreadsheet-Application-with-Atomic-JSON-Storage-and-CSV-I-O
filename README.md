@@ -1,8 +1,11 @@
-# Persistent Spreadsheet Application
+# Spreadsheet Persistence API
 
-An interview-ready Node.js backend application offering a persistence layer for a conceptual spreadsheet program, including atomic JSON file storage and CSV Import/Export endpoints with basic formula evaluation.
+A backend REST API for a spreadsheet application with **atomic JSON storage** and **CSV import/export**, built with Node.js and Express, fully containerized with Docker.
+
+---
 
 ## Architecture Overview
+
 
 The system architecture features a layered design, effectively decoupled for integration testing.
 
@@ -40,127 +43,113 @@ graph TD
     StorageSvc -- "Reads directly" --> JSONFiles
 ```
 
-### Key Technical Approaches
 
-1. **Testability / Decoupling**: The application Express instance (`src/app.js`) is decoupled from the HTTP server instantiation (`src/server.js`), allowing native integration testing using Jest without port-binding conflicts.
-2. **Data Integrity & Atomic Writes**: The `StorageService` leverages standard filesystem operations to create a reliable pseudo-database. When saving a sheet state, the application writes to a unique temporary file (`Crypto.randomBytes`) and then executes an atomic filesystem `rename`. This guarantees that if the server crashes mid-write, the original JSON file is never left in a corrupted state.
-3. **CSV Parsing**: The `csvService` supports spreadsheet import and export bridging the Gap between standard CSVs and standard State representation. Formulas (denoted with a leading `=`) are mathematically evaluated before being populated in an outgoing export.
-4. **Containerization**: Application runs within Docker with mounted volumes (`./app_data`) persisting files from the container down to the host machine.
+**Key Design Decisions:**
+- **Atomic Writes**: New data is written to a `.tmp` file first, then renamed to the final path. `rename()` is atomic at the OS level, so the original file is never corrupted.
+- **Formula Safety**: Formulas are evaluated using a regex-based parser — never `eval()` — preventing code injection.
+- **Docker Volumes**: The `app_data/` directory is mounted into the container, so data persists across container restarts.
 
+---
 
+## Quick Start
 
-## Setup Instructions
+### Prerequisites
+- Docker & Docker Compose
 
-### Local Development
+### Run with Docker (recommended)
+```bash
+# Clone and enter the project
+git clone <repo-url>
+cd spreadsheet-app
 
-1. Install dependencies:
-   ```bash
-   npm install
-   ```
+# Start the application
+docker-compose up --build
 
-2. Run the server (default port 3000):
-   ```bash
-   npm run dev
-   ```
+# App is running at http://localhost:3000
+```
 
-3. Run Tests:
-   ```bash
-   npm run test
-   ```
- *(Note: add the scripts `"test": "jest app.test.js"` in `package.json` to map tests)*
+### Run locally (for development)
+```bash
+cp .env.example .env
+# Edit .env if needed, then:
+npm install
+npm start
+```
 
-### Docker Deployment
+---
 
-1. **Build and Start Container**
-   ```bash
-   docker-compose up -d --build
-   ```
-2. **Ping Healthcheck**
-   ```bash
-   curl http://localhost:3000/health
-   ```
-3. **Stop Container**
-   ```bash
-   docker-compose down
-   ```
+## Environment Variables
 
-## API Endpoints
+See `.env.example`:
 
-| Endpoint | Method | Description |
-| :--- | :--- | :--- |
-| `/health` | GET | Healthcheck returning `{ status: "ok" }`. |
-| `/api/sheets/:sheetId/state` | GET | Retrieve the serialized JSON map of the requested sheet. |
-| `/api/sheets/:sheetId/state` | PUT | Save a sheet JSON map. Requires a `{ "cells": { ... } }` payload. |
-| `/api/sheets/:sheetId/import` | POST | Upload a multipart form `file` containing a target CSV, overwriting state. |
-| `/api/sheets/:sheetId/export` | GET | Download a rendered representation of the state computing evaluated equations. |
+| Variable | Default | Description |
+|---|---|---|
+| `PORT` | `3000` | Port the server listens on |
+| `DATA_STORAGE_PATH` | `/app/data` | Directory for JSON sheet files |
 
-### API Test Cases & Examples
+---
 
-#### 1. Healthcheck (`GET /health`)
-- **Success (200 OK)**
-  ```bash
-  curl http://localhost:3000/health
-  # Response: { "status": "ok" }
-  ```
+## API Reference
 
-#### 2. Save Sheet State (`PUT /api/sheets/:sheetId/state`)
-- **Success (204 No Content)**
-  ```bash
-  curl -X PUT http://localhost:3000/api/sheets/sheet1/state \
-       -H "Content-Type: application/json" \
-       -d '{"cells": {"A1": {"value": "Hello"}, "A2": {"value": "World"}}}'
-  # Response: (Empty body, 204 status)
-  ```
-- **Failure - Invalid Body (400 Bad Request)**
-  ```bash
-  curl -X PUT http://localhost:3000/api/sheets/sheet1/state \
-       -H "Content-Type: application/json" \
-       -d '{}'
-  # Response: { "error": "Invalid JSON body" }
-  ```
-- **Failure - Malformed JSON (400 Bad Request)**
-  ```bash
-  curl -X PUT http://localhost:3000/api/sheets/sheet1/state \
-       -H "Content-Type: application/json" \
-       -d '{"cells":'
-  # Response: { "error": "Malformed JSON" }
-  ```
+### Health Check
+```
+GET /health
+→ 200 { "status": "ok" }
+```
 
-#### 3. Load Sheet State (`GET /api/sheets/:sheetId/state`)
-- **Success (200 OK)**
-  ```bash
-  curl http://localhost:3000/api/sheets/sheet1/state
-  # Response: { "cells": { "A1": { "value": "Hello" }, "A2": { "value": "World" } } }
-  ```
-- **Failure - Not Found (404 Not Found)**
-  ```bash
-  curl http://localhost:3000/api/sheets/missing_sheet/state
-  # Response: { "error": "Sheet not found" }
-  ```
+### Save Sheet State (Atomic)
+```
+PUT /api/sheets/:sheetId/state
+Content-Type: application/json
 
-#### 4. Import CSV (`POST /api/sheets/:sheetId/import`)
-- **Success (204 No Content)**
-  ```bash
-  # Assuming you have a file named data.csv
-  curl -X POST http://localhost:3000/api/sheets/sheet1/import \
-       -F "file=@data.csv"
-  # Response: (Empty body, 204 status)
-  ```
-- **Failure - No File Provided (400 Bad Request)**
-  ```bash
-  curl -X POST http://localhost:3000/api/sheets/sheet1/import
-  # Response: { "error": "No CSV file provided" }
-  ```
+Body: { "cells": { "A1": "Hello", "B1": "=10+5" } }
+→ 204 No Content
+```
 
-#### 5. Export CSV (`GET /api/sheets/:sheetId/export`)
-- **Success (200 OK)**
-  ```bash
-  curl http://localhost:3000/api/sheets/sheet1/export
-  # Response: CSV file content
-  ```
-- **Failure - Not Found (404 Not Found)**
-  ```bash
-  curl http://localhost:3000/api/sheets/missing_sheet/export
-  # Response: { "error": "Sheet not found" }
-  ```
+### Load Sheet State
+```
+GET /api/sheets/:sheetId/state
+→ 200 { "cells": { ... } }
+→ 404 if sheet not found
+```
 
+### Import CSV
+```
+POST /api/sheets/:sheetId/import
+Content-Type: multipart/form-data
+Field: file (CSV file)
+
+→ 204 No Content
+```
+Formulas (values starting with `=`) are stored as strings.
+
+### Export CSV
+```
+GET /api/sheets/:sheetId/export
+→ 200 text/csv (formulas are evaluated to computed values)
+→ 404 if sheet not found
+```
+
+---
+
+## Testing
+```bash
+npm test
+```
+
+---
+
+## Verify Data Persistence
+```bash
+docker-compose up -d
+# Save some data:
+curl -X PUT http://localhost:3000/api/sheets/test/state \
+  -H "Content-Type: application/json" \
+  -d '{"cells": {"A1": "Persisted!"}}'
+
+docker-compose down
+docker-compose up -d
+
+# Data should still be there:
+curl http://localhost:3000/api/sheets/test/state
+```
