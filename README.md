@@ -60,7 +60,6 @@ graph TD
 ```bash
 # Clone and enter the project
 git clone <repo-url>
-cd spreadsheet-app
 
 # Start the application
 docker-compose up --build
