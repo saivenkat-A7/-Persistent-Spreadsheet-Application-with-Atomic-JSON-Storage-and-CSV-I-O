@@ -1,0 +1,18 @@
+version: '3.8'
+
+services:
+  app:
+    build: .
+    ports:
+      - "${PORT:-3000}:3000"
+    environment:
+      - PORT=3000
+      - DATA_STORAGE_PATH=/app/data
+    volumes:
+      - ./app_data:/app/data # Mounts local ./app_data to /app/data in the container
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:3000/health", "||", "exit", "1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
