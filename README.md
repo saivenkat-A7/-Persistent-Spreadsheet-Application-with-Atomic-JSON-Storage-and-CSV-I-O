@@ -41,7 +41,7 @@ graph TD
     StorageSvc -- "Writes to Temp File" --> TempFiles
     TempFiles -- "Atomic Rename" --> JSONFiles
     StorageSvc -- "Reads directly" --> JSONFiles
-```
+``` 
 
 
 **Key Design Decisions:**
